@@ -1,10 +1,10 @@
 /*
  * This file is part of Reslog, a PHP extension to log resource usage
- * by PHP scripts.
- * 
+ * of PHP scripts.
+ *
  * Author: Varga Bence <vbence@czentral.org>
  */
- 
+
 #ifndef PHP_RESLOG_H
 #define PHP_RESLOG_H 1
 

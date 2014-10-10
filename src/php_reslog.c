@@ -1,6 +1,6 @@
 /*
  * This file is part of Reslog, a PHP extension to log resource usage
- * by PHP scripts.
+ * of PHP scripts.
  *
  * Author: Varga Bence <vbence@czentral.org>
  */
@@ -36,7 +36,7 @@ zend_module_entry reslog_module_entry = {
     PHP_MINIT(reslog),
     PHP_MSHUTDOWN(reslog),
     PHP_RINIT(reslog),
-    PHP_RSHUTDOWN(reslog),	
+    PHP_RSHUTDOWN(reslog),    
     PHP_MINFO(reslog),
 #if ZEND_MODULE_API_NO >= 20010901
     PHP_RESLOG_VERSION,
@@ -98,13 +98,14 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     // environment variables - constants for strlen()
     const char * REQUEST_URI = "REQUEST_URI";
     const char * REMOTE_ADDR = "REMOTE_ADDR";
-	const char * SERVER_NAME = "SERVER_NAME";
+    const char * SERVER_NAME = "SERVER_NAME";
     const char * HTTP_HOST = "HTTP_HOST";
     
     // check presence of REQUEST_URI    
-    char * request_uri = sapi_getenv(REQUEST_URI, strlen(REQUEST_URI));
-    if (request_uri == NULL)
+    char * request_uri = sapi_getenv((char *)REQUEST_URI, strlen(REQUEST_URI));
+    if (request_uri == NULL) {
         return SUCCESS;
+    }
 
     // get current rusage
     struct rusage endusage;
@@ -127,21 +128,21 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     // buffer to build log line
     char line_buffer[1024] = "";
 
-	// show server name (if needed)
+    // show server name (if needed)
     int showhost = INI_BOOL("reslog.showhost");
     if (showhost) {
-	
-    	// SERVER_NAME (canonical) or HTTP_HOST
-		char * server_name = INI_BOOL("reslog.usecanonical") ? SERVER_NAME : HTTP_HOST;
+    
+        // SERVER_NAME (canonical) or HTTP_HOST
+        char * server_name = INI_BOOL("reslog.usecanonical") ? SERVER_NAME : HTTP_HOST;
         snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
             , "%s "
             , sapi_getenv(server_name, strlen(server_name)));
-	}
-	
-	// fixed data
+    }
+    
+    // fixed data
     snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
         , "%s [%s] \"%s\" %u %u %u %u\n"
-        , sapi_getenv(REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
+        , sapi_getenv((char *)REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
 
     int use_syslog = INI_BOOL("reslog.syslog");
     if (use_syslog) {
