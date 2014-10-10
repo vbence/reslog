@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <syslog.h>
+#include <unistd.h>
 
 static zend_function_entry reslog_functions[] = {
     PHP_FE(restest, NULL)
@@ -48,6 +50,7 @@ ZEND_GET_MODULE(reslog)
 
 PHP_INI_BEGIN()
     PHP_INI_ENTRY("reslog.file", "/tmp/php-reslog", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
+    PHP_INI_ENTRY("reslog.syslog", "0", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
     PHP_INI_ENTRY("reslog.showhost", "0", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
     PHP_INI_ENTRY("reslog.usecanonical", "1", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
 PHP_INI_END()
@@ -87,6 +90,9 @@ PHP_RINIT_FUNCTION(reslog)
     return SUCCESS;
 }
 
+#define LOCK_RETRY_TIME 2000
+#define LOCKED_FILE_TIMEOUT 50000
+
 PHP_RSHUTDOWN_FUNCTION(reslog)
 {
     // environment variables - constants for strlen()
@@ -117,24 +123,64 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     char stime[40];
     localtime_r(&tp.tv_sec, &t);
     strftime(stime, sizeof(stime) - 1, "%d/%b/%Y:%H:%M:%S %Z", &t);
-    
-    // log hostname? (single logfile with vrtual hosting)
-    int showhost = INI_BOOL("reslog.showhost");
-    
-    // write the log
-    FILE* f = fopen (INI_STR("reslog.file"), "a");
-	
+
+    // buffer to build log line
+    char line_buffer[1024] = "";
+
 	// show server name (if needed)
+    int showhost = INI_BOOL("reslog.showhost");
     if (showhost) {
 	
     	// SERVER_NAME (canonical) or HTTP_HOST
 		char * server_name = INI_BOOL("reslog.usecanonical") ? SERVER_NAME : HTTP_HOST;
-		fprintf(f, "%s ", sapi_getenv(server_name, strlen(server_name)));
+        snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
+            , "%s "
+            , sapi_getenv(server_name, strlen(server_name)));
 	}
 	
 	// fixed data
-	fprintf(f, "%s [%s] \"%s\" %u %u %u %u\n", sapi_getenv(REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
-	fclose(f);
+    snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
+        , "%s [%s] \"%s\" %u %u %u %u\n"
+        , sapi_getenv(REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
+
+    int use_syslog = INI_BOOL("reslog.syslog");
+    if (use_syslog) {
+
+        syslog(LOG_INFO | LOG_USER, line_buffer);
+
+    } else {
+
+        // write the log
+        FILE* f = fopen (INI_STR("reslog.file"), "a");
+
+        int timeout = 0;
+        int lock_error;
+        do {
+            lock_error = lockf(fileno(f), F_TLOCK, (off_t)0);
+
+            if (!lock_error)
+                break;
+
+            //sleep for a bit
+            usleep(LOCK_RETRY_TIME);
+
+            //Incremement timeout
+            timeout += LOCK_RETRY_TIME;
+
+            //Check for time out
+            if (timeout > LOCKED_FILE_TIMEOUT) {
+                return;
+            }
+
+        } while (lock_error == EACCES || lock_error == EAGAIN);
+
+        fwrite(line_buffer, strlen(line_buffer), 1, f);
+
+        fflush(f);
+        lockf(fileno(f), F_ULOCK, 0);
+
+        fclose(f);
+    }
     
     return SUCCESS;
 }
