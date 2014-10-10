@@ -1,6 +1,8 @@
 /*
- * Varga Bence
- * lanny - at - freemail.hu
+ * This file is part of Reslog, a PHP extension to log resource usage
+ * by PHP scripts.
+ *
+ * Author: Varga Bence <vbence@czentral.org>
  */
 
 #ifdef HAVE_CONFIG_H
@@ -12,14 +14,13 @@
 #include "php_reslog.h"
 #include "SAPI.h"
 #include "ext/standard/url.h"
-#include "ext/standard/reg.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 
-static function_entry reslog_functions[] = {
+static zend_function_entry reslog_functions[] = {
     PHP_FE(restest, NULL)
     {NULL, NULL, NULL}
 };
@@ -99,9 +100,6 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     if (request_uri == NULL)
         return SUCCESS;
 
-    // logile-safe URI's - may be not the fastest method
-    char * uri = php_reg_replace(" ", "%20", request_uri, 0, 0);
-
     // get current rusage
     struct rusage endusage;
     getrusage(RUSAGE_SELF, &endusage);
@@ -135,12 +133,9 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
 	}
 	
 	// fixed data
-	fprintf(f, "%s [%s] \"%s\" %u %u %u %u\n", sapi_getenv(REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
+	fprintf(f, "%s [%s] \"%s\" %u %u %u %u\n", sapi_getenv(REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
 	fclose(f);
     
-    // free some resources PHP uses its own memory management (at least in php_reg_replace), so this would be freed at the end of the request anyway)
-    efree(uri);
-
     return SUCCESS;
 }
 

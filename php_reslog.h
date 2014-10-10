@@ -1,12 +1,14 @@
 /*
- * Varga Bence
- * lanny - at - freemail.hu
+ * This file is part of Reslog, a PHP extension to log resource usage
+ * by PHP scripts.
+ * 
+ * Author: Varga Bence <vbence@czentral.org>
  */
  
 #ifndef PHP_RESLOG_H
 #define PHP_RESLOG_H 1
 
-#define PHP_RESLOG_VERSION "1.0.2"
+#define PHP_RESLOG_VERSION "1.0.3"
 #define PHP_RESLOG_EXTNAME "ResLog"
 
 struct rusage startusage;
