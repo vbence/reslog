@@ -50,6 +50,7 @@ ZEND_GET_MODULE(reslog)
 
 PHP_INI_BEGIN()
     PHP_INI_ENTRY("reslog.file", "/tmp/php-reslog", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
+    PHP_INI_ENTRY("reslog.hideuri", "0", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
     PHP_INI_ENTRY("reslog.syslog", "0", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
     PHP_INI_ENTRY("reslog.showhost", "0", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
     PHP_INI_ENTRY("reslog.usecanonical", "1", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
@@ -95,17 +96,24 @@ PHP_RINIT_FUNCTION(reslog)
 
 PHP_RSHUTDOWN_FUNCTION(reslog)
 {
-    // environment variables - constants for strlen()
+    // environment variables
     const char * REQUEST_URI = "REQUEST_URI";
     const char * REMOTE_ADDR = "REMOTE_ADDR";
     const char * SERVER_NAME = "SERVER_NAME";
     const char * HTTP_HOST = "HTTP_HOST";
+
+    const char * STRING_NA = "n/a";
+
+    // fake uri (if reporting is disabled)
+    const char * FAKE_URI = "/";
     
-    // check presence of REQUEST_URI    
-    char * request_uri = sapi_getenv((char *)REQUEST_URI, strlen(REQUEST_URI));
-    if (request_uri == NULL) {
-        return SUCCESS;
+    // check presence of REQUEST_URI
+    char * request_uri_env = sapi_getenv((char *)REQUEST_URI, strlen(REQUEST_URI));
+    if (request_uri_env == NULL) {
+        //return SUCCESS;
+        request_uri_env = STRING_NA;
     }
+    char * request_uri = INI_BOOL("reslog.hideuri") ? FAKE_URI : request_uri_env;
 
     // get current rusage
     struct rusage endusage;
@@ -118,6 +126,13 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     unsigned long u_elapsed = (endusage.ru_utime.tv_sec * 1000000 + endusage.ru_utime.tv_usec) - (startusage.ru_utime.tv_sec * 1000000 + startusage.ru_utime.tv_usec);
     unsigned long s_elapsed = (endusage.ru_stime.tv_sec * 1000000 + endusage.ru_stime.tv_usec) - (startusage.ru_stime.tv_sec * 1000000 + startusage.ru_stime.tv_usec);
     unsigned long t_elapsed = (etp.tv_sec * 1000000 + etp.tv_usec) - (tp.tv_sec * 1000000 + tp.tv_usec);
+    unsigned long hardfault =  endusage.ru_majflt - startusage.ru_majflt;
+    unsigned long blk_in_count =  endusage.ru_inblock - startusage.ru_inblock;
+    unsigned long blk_out_count =  endusage.ru_oublock - startusage.ru_oublock;
+
+    // peak memory usage
+    unsigned long mem_peak = zend_memory_usage(0 TSRMLS_CC);
+    unsigned long mem_peak_real = zend_memory_usage(1 TSRMLS_CC);
     
     // request time - something similar to Apache's style [15/Feb/2006:10:43:34 +0100]
     struct tm t;
@@ -134,15 +149,26 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
     
         // SERVER_NAME (canonical) or HTTP_HOST
         char * server_name = INI_BOOL("reslog.usecanonical") ? SERVER_NAME : HTTP_HOST;
-        snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
+        if (server_name == NULL) {
+            server_name = STRING_NA;
+        }
+        snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer) - 1
             , "%s "
             , sapi_getenv(server_name, strlen(server_name)));
     }
-    
+
+    char * remote_addr = sapi_getenv((char *)REMOTE_ADDR, strlen(REMOTE_ADDR));
+    if (remote_addr == NULL) {
+        remote_addr = STRING_NA;
+    }
+
     // fixed data
-    snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer)
-        , "%s [%s] \"%s\" %u %u %u %u\n"
-        , sapi_getenv((char *)REMOTE_ADDR, strlen(REMOTE_ADDR)), stime, request_uri, getpid(), u_elapsed, s_elapsed, t_elapsed);
+    snprintf(line_buffer + strlen(line_buffer), sizeof(line_buffer) - strlen(line_buffer) - 1
+        , "%s [%s] \"%s\" %u - %u %u %u - %u %u - %u %u %u\n"
+        , remote_addr, stime, request_uri, getpid()
+        , u_elapsed, s_elapsed, t_elapsed
+        , blk_in_count, blk_out_count
+        , mem_peak, mem_peak_real, hardfault);
 
     int use_syslog = INI_BOOL("reslog.syslog");
     if (use_syslog) {
@@ -153,6 +179,10 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
 
         // write the log
         FILE* f = fopen (INI_STR("reslog.file"), "a");
+
+        if (f == NULL) {
+            return SUCCESS;
+        }
 
         int timeout = 0;
         int lock_error;
@@ -182,7 +212,7 @@ PHP_RSHUTDOWN_FUNCTION(reslog)
 
         fclose(f);
     }
-    
+
     return SUCCESS;
 }
 

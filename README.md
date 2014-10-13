@@ -11,7 +11,13 @@ It is possible to use *separate files* for different virtual hosts.
 
 Log messages have the following format (similarly to Apache's access log):
 
-    [ http_host SPACE ] remote_addr SPACE "[" request_time "]" SPACE <"> request_uri <"> SPACE pid SPACE u_elapsed SPACE s_elapsed SPACE t_elapsed
+    [ http_host SPACE ] remote_addr SPACE "[" request_time "]" SPACE
+    <"> request_uri <"> SPACE pid SPACE
+    "-" times SPACE "-" SPACE io SPACE "-" SPACE memory
+    
+    times : u_elapsed SPACE s_elapsed SPACE t_elapsed 
+    io : blk_in_count SPACE blk_out_count
+    memory : mem_peak SPACE mem_peak_real SPACE hardfault
 
 **http_host**
 : Name of the *host* from the `SERVER_NAME` environment, if `reslog.usecanonical` is enabled (default). Otherwise the host name in use by the client from the `HTTP_HOST` environment.
@@ -39,6 +45,21 @@ This can be useful in case of multiple `ServerAlias` directives.
 : Elapsed time (microseconds) from starting the script to finishing.
 This is not indicative of the current script's performance as other threads will have an impact on this amount.
 
+**blk_in_count**
+ : Number of block input operations (reads).
+ 
+**blk_out_count**
+ : Number of block output operations (writes).
+
+**mem_peak**
+: Peak memory usage. The value reported by `memory_get_peak_usage(false)`.
+
+**mem_peak_real**
+: Real peak memory usage. The value reported by `memory_get_peak_usage(true)`.
+
+**hardfault**
+: "Hard" page faults (where I/O operations were needed).
+
 ## Compiling
 
 Get the binary with the following commands:
@@ -65,6 +86,9 @@ The extension has the following parameters (also settable in `.htaccess` but not
 
 **reslog.file**
 : *String*, name of the file to use for log messages. (File operations will be done with the same privileges with which the script is executed).
+
+**reslog.hideuri**
+: Request URI will be replaced by "/".
 
 **reslog.showhost**
 : *Boolean*, determines whether to prefix log lines with the server's name.
